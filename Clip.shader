@@ -40,6 +40,7 @@
 				#include "UnityCG.cginc"
 
 				float4x4 _mtStorage;
+				float clipPosx, clipPosy;
 	
 				sampler2D _ATex;
 				sampler2D _BTex;
@@ -49,7 +50,13 @@
 				// float _MaxX;
 				// float _MinY;
 				// float _MaxY;
-				
+				float _PosX;
+				float _P0X;
+				float _P0Y;
+				float _P1X;
+				float _P1Y;
+				float _P2X;
+				float _P2Y;
 
 				struct appdata_t {
 					float4 vertex : POSITION;
@@ -73,8 +80,6 @@
 	
 				v2f vert (appdata_t v)
 				{
-					
-
 					v2f o;
 					o.vpos = v.vertex.xyz;
 					o.vertex = UnityObjectToClipPos(v.vertex);
@@ -90,6 +95,29 @@
 	
 				sampler2D_float _CameraDepthTexture;
 				float _InvFade;
+
+				float cal_bezier_y(float2 P0, float2 P1, float2 P2, float x){
+					float a = P0.x - 2.0 * P1.x + P2.x, 
+					b = (-2.0) * P0.x  + 2.0 * P1.x, 
+					c = P0.x - x;
+
+					float temp = (sqrt(b * b - 4.0 * a* c));
+					float t1 = (-temp - b)/(2.0*a);
+					float t2 = (temp - b)/(2.0*a);
+					float t;
+					if(0<t2 && t2<1)
+						t = t2;
+					if(0<t1 && t1<1)
+						t = t1;  
+					float bezier_y = (1.0-t)*(1.0-t) * P0.y + 2.0*t*(1.0-t) * P1.y + t*t*P2.y;
+					return bezier_y;
+				}
+
+				float cal_line_y(float2 P0, float2 P1, float x){
+					return (((P1.x-x) * P0.y + (x - P0.x) * P1.y )/(P1.x - P0.x));
+				}
+
+
 				
 				fixed4 frag (v2f i) : SV_Target
 				{
@@ -99,58 +127,135 @@
 					// float fade = saturate (_InvFade * (sceneZ-partZ));
 					// i.color.a *= fade;
 					// #endif
-
-					float _PosX;
-					float _P0X;
-					float _P0Y;
-					float _P1X;
-					float _P1Y;
-					float _P2X;
-					float _P2Y;
 					
 					fixed4 color ;
 
-					// if(i.texcoord.x > i.texcoord.y)
-					// 	color =  tex2D(_ATex, i.texcoord);//2.0f * i.color  *
-					
-					// else 
-					// 	color = tex2D(_BTex, i.texcoord);
-					
+					// float2 p0 = float2(_P0X, _P0Y);
+					// float2 p1 = float2(_P1X, _P1Y);
+					// float2 p2 = float2(_P2X, _P2Y);
 
-					// if(i.texcoord.x - _PosX > i.texcoord.y)
-					// 	color =  tex2D(_CTex, i.texcoord);
 
-					float a = _P0X - 2.0 * _P1X + _P2X, 
-					b = (-2.0) * _P0X  + 2.0 * _P1X, 
-					c = _P0X - i.texcoord.x;
-
-					float temp = (sqrt(b * b - 4.0 * a* c));
-					float t1 = (-temp - b)/(2.0*a);
-					float t2 = (temp - b)/(2.0*a);
-					float t;
-					// if(0<t1 && t1<1)
-					// 	t = t1;  
-					// else 
-					//	t = t2;
-					if(0<t2 && t2<1)
-						t = t2;
-					if(0<t1 && t1<1)
-						t = t1;  
-					 
-						
+					color = tex2D(_ATex, i.texcoord);
 					
-					float bezier_y = (1.0-t)*(1.0-t) * _P0Y + 2.0*t*(1.0-t) * _P1Y + t*t*_P2Y;
-					//if( _P0X < i.texcoord.x && i.texcoord.x< _P2X )
+					//c.x~d.x
+					if(_mtStorage[0][0] <i.texcoord.x && i.texcoord.x < _mtStorage[1][2])
 					{
+						float2 p0 = float2(_mtStorage[0][0], _mtStorage[0][1]);
+						float2 p1 = float2(_mtStorage[0][2], _mtStorage[0][3]);
+						float2 p2 = float2(_mtStorage[1][0], _mtStorage[1][1]);
+						float bezier_y = cal_bezier_y(p0, p1, p2, i.texcoord.x);
 						if( i.texcoord.y < bezier_y)
 							color = tex2D(_CTex, i.texcoord);
 						else
-							color =  tex2D(_BTex, i.texcoord);
-						// if(  bezier_y - 0.05 < i.texcoord.y  && i.texcoord.y < bezier_y + 0.05)
-						// 	color = tex2D(_CTex, i.texcoord);
-						// else
-						// 	color =  tex2D(_BTex, i.texcoord);
+							color =  tex2D(_ATex, i.texcoord);
 					}
+					//i.x~j.x
+					if(_mtStorage[3][2] <i.texcoord.x && i.texcoord.x < _mtStorage[3][0])
+					{
+						float2 p0 = float2(_mtStorage[2][0], _mtStorage[2][1]);
+						float2 p1 = float2(_mtStorage[2][2], _mtStorage[2][3]);
+						float2 p2 = float2(_mtStorage[3][0], _mtStorage[3][1]);
+						float bezier_y = cal_bezier_y(p0, p1, p2, i.texcoord.x);
+						if( i.texcoord.y < bezier_y)
+							color = tex2D(_CTex, i.texcoord);
+						else
+							color =  tex2D(_ATex, i.texcoord);
+					}
+
+					//d.x~i.x
+					if(_mtStorage[1][2] <i.texcoord.x && i.texcoord.x < _mtStorage[3][2]){
+						
+						float2 q0 = float2(_mtStorage[1][2], _mtStorage[1][3]);
+						float2 q1 = float2(_mtStorage[3][2], _mtStorage[3][3]);
+						float line_y = cal_line_y(q0, q1, i.texcoord.x);
+						if( i.texcoord.y < line_y){
+							color = tex2D(_CTex, i.texcoord);
+						}
+						else
+						{
+							//color = tex2D(_BTex, i.texcoord);
+
+							//d.x~b.x
+							if(_mtStorage[1][2] <=i.texcoord.x && i.texcoord.x < _mtStorage[1][0]){
+								float2 c = float2(_mtStorage[0][0], _mtStorage[0][1]);
+								float2 e = float2(_mtStorage[0][2], _mtStorage[0][3]);
+								float2 b = float2(_mtStorage[1][0], _mtStorage[1][1]);
+								float bezier_y = cal_bezier_y(c, e, b, i.texcoord.x);
+								if( i.texcoord.y < bezier_y)
+									color = tex2D(_BTex, i.texcoord);
+								else
+									color =  tex2D(_ATex, i.texcoord);
+							}
+							//b.x~a.x
+							if(_mtStorage[1][0] <=i.texcoord.x && i.texcoord.x < clipPosx){
+								//color = tex2D(_BTex, i.texcoord);
+								float2 b0 = float2(_mtStorage[1][0], _mtStorage[1][1]);
+								float2 a1 = float2(clipPosx, clipPosy);
+								float line_y2 = cal_line_y(b0, a1, i.texcoord.x);
+								if( i.texcoord.y < line_y2){
+									color = tex2D(_BTex, i.texcoord);
+								}
+								else
+									color =  tex2D(_ATex, i.texcoord);
+							}
+							//a.x~k.x
+							if(clipPosx <=i.texcoord.x && i.texcoord.x < _mtStorage[2][0]){
+								//color = tex2D(_BTex, i.texcoord);
+								float2 a2 = float2(clipPosx, clipPosy);
+								float2 k1 = float2(_mtStorage[2][0], _mtStorage[2][1]);
+								float line_y2 = cal_line_y(a2, k1, i.texcoord.x);
+								if( i.texcoord.y < line_y2)
+									color = tex2D(_BTex, i.texcoord);
+								else
+									color = tex2D(_ATex, i.texcoord);
+							}
+							//k.x~i.x
+							if(_mtStorage[2][0] <= i.texcoord.x && i.texcoord.x < _mtStorage[3][2]){
+								float2 k = float2(_mtStorage[2][0], _mtStorage[2][1]);
+								float2 h = float2(_mtStorage[2][2], _mtStorage[2][3]);
+								float2 j = float2(_mtStorage[3][0], _mtStorage[3][1]);
+								float bezier_y2 = cal_bezier_y(k, h, j, i.texcoord.x);
+								if( i.texcoord.y < bezier_y2)
+									color = tex2D(_BTex, i.texcoord);
+								else
+									color =  tex2D(_ATex, i.texcoord);
+							}
+						}
+						
+					}
+
+					// //b.x~a.x
+					// if(_mtStorage[1][0] < i.texcoord.x && i.texcoord.x < clipPosx)
+					// {
+					
+					// 	float2 p0 = float2(_mtStorage[1][0], _mtStorage[1][1]);
+					// 	float2 p1 = float2(clipPosx, clipPosy);
+					// 	line_y = cal_line_y(p0, p1, i.texcoord.x);
+					// 	if( i.texcoord.y < line_y){
+					// 		color = tex2D(_CTex, i.texcoord);
+					// 	}
+					// 	else
+					// 		color =  tex2D(_BTex, i.texcoord);
+					// }
+					// //a.x~k.x
+					// if( clipPosx < i.texcoord.x && i.texcoord.x < _mtStorage[2][0] )
+					// {
+					// 	float2 p0 = float2(clipPosx, clipPosy);
+					// 	float2 p1 = float2(_mtStorage[2][0], _mtStorage[2][1]);
+					// 	line_y = cal_line_y(p0, p1, i.texcoord.x);
+					// 	if( i.texcoord.y < line_y)
+					// 		color = tex2D(_CTex, i.texcoord);
+					// 	else
+					// 		color = tex2D(_BTex, i.texcoord);
+					// }
+					
+					// bezier_y = cal_bezier_y(p0, p1, p2, i.texcoord.x);
+
+					// _mtStorage[1][1] = 1.0f;
+					
+					// {
+						
+					// }
 
 					return color;
 				}
